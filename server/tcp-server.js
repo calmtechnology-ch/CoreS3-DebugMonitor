@@ -9,6 +9,7 @@ export function createTcpServer(deviceManager, port = 9000, host = '0.0.0.0') {
 
         deviceManager.registerDevice(socket, remoteIp, remotePort);
         const parser = new ProtocolParser();
+        let helloReceived = false;
 
         socket.on('data', (chunk) => {
             const lines = parser.push(chunk);
@@ -19,10 +20,27 @@ export function createTcpServer(deviceManager, port = 9000, host = '0.0.0.0') {
                 }
 
                 const result = parseAndValidateMessage(item);
-                if (result.valid) {
-                    deviceManager.handleMessage(socket, result.message);
-                } else {
+                if (!result.valid) {
                     deviceManager.recordInvalid(socket, result);
+                    continue;
+                }
+
+                const msg = result.message;
+
+                // Enforce: 'hello' must be the first message accepted on each connection
+                if (!helloReceived) {
+                    if (msg.type === 'hello') {
+                        helloReceived = true;
+                        deviceManager.handleMessage(socket, msg);
+                    } else {
+                        deviceManager.recordInvalid(socket, {
+                            error: 'HELLO_REQUIRED',
+                            message: `First message on connection must be 'hello', received '${msg.type}'`,
+                            rejectedMessage: msg
+                        });
+                    }
+                } else {
+                    deviceManager.handleMessage(socket, msg);
                 }
             }
         });

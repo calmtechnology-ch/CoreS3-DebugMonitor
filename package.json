@@ -1,6 +1,6 @@
 {
   "name": "cores3-debug-monitor",
-  "version": "0.1.0",
+  "version": "0.1.0.1",
   "description": "Lightweight Network Diagnostics for M5Stack CoreS3",
   "main": "server/index.js",
   "type": "module",

@@ -1,75 +1,54 @@
-# Référence de l'API C++ — DebugAgent v0.1.0
+# Référence de l'API C++ — DebugAgent v0.1.0.1
+## Non-Blocking & Memory Reliability
 
-La bibliothèque `DebugAgent` est une bibliothèque C++ indépendante pour ESP32-S3. Elle fournit une interface non bloquante, thread-safe et sans allocation dynamique récurrente.
+La bibliothèque `DebugAgent` est une bibliothèque C++ indépendante pour ESP32-S3. Elle fournit un transport réseau réellement non bloquant, thread-safe et sans allocation dynamique récurrente.
 
 ---
 
-## 1. Inclusion et Instance Globale
+### 1. Inclusion & Initialisation
 
 ```cpp
 #include "DebugAgent.h"
 
-// L'instance globale est prédéfinie :
 // extern DebugAgent debug;
 ```
 
----
-
-## 2. Configuration Initiale : `debug.begin()`
-
+#### Configuration : `debug.begin(const DebugConfig&)`
 ```cpp
-bool debug.begin(const DebugConfig& config = DebugConfig());
+DebugConfig config;
+config.host = "192.168.1.10";    // IPv4 numérique recommandée (pas de DNS bloquant)
+config.port = 9000;
+config.deviceName = "CoreS3-01";
+config.appName = "MonApplication";
+config.appVersion = "0.1.0.1";
+config.usePsram = true;          // Alloué en PSRAM (8192 octets)
+config.allowSramFallback = false;// Désactivé par défaut sur CoreS3
+
+bool ok = debug.begin(config);
 ```
 
-Initialise le buffer circulaire en PSRAM et prépare la socket client TCP.
+---
 
-### Structure `DebugConfig`
-
-| Propriété | Type | Valeur par défaut | Description |
-|---|---|---|---|
-| `host` | `const char*` | `"192.168.1.10"` | Adresse IPv4 du serveur PC hôte |
-| `port` | `uint16_t` | `9000` | Port d'écoute TCP du serveur |
-| `deviceName` | `const char*` | `"CoreS3-01"` | Nom du périphérique identifié |
-| `appName` | `const char*` | `"BasicDiagnostics"` | Nom de l'application hôte |
-| `appVersion` | `const char*` | `"0.1.0"` | Version applicative |
-| `minLevel` | `uint8_t` | `DEBUG_LEVEL_TRACE` | Niveau minimal de journalisation |
-| `metricIntervalMs`| `uint32_t` | `1000` | Fréquence d'émission des métriques (ms) |
-| `reconnectIntervalMs`| `uint32_t`| `3000` | Délai de reconnexion après échec (ms) |
-| `bufferSize` | `size_t` | `8192` | Taille du buffer en PSRAM (octets) |
-| `usePsram` | `bool` | `true` | Allouer préférentiellement en PSRAM |
+### 2. Maintien : `debug.update()`
+Appelé régulièrement dans la boucle `loop()` ou une tâche de maintenance.
+- **Budget temporel coopératif** : 200 µs cible, 1 ms plafond maximal.
+- Rend la main immédiatement dès que le budget est atteint.
+- Dépile les messages du buffer circulaire PSRAM uniquement après acceptation par le socket.
+- Temps mesuré moyen : ~38 µs.
 
 ---
 
-## 3. Maintien de la Tâche : `debug.update()`
-
+### 3. Libération : `debug.end()`
 ```cpp
-void debug.update();
+debug.end();
 ```
-
-Doit être appelée régulièrement dans la boucle `loop()` ou dans une tâche FreeRTOS dédiée.
-
-**Garanties de fonctionnement :**
-- Vérifie l'état de la connexion Wi-Fi existante (sans jamais appeler `WiFi.begin()`).
-- Met à jour la machine à états de transport TCP.
-- Dépile et envoie les données du tampon circulaire dans la limite de son budget (`DEBUG_UPDATE_BUDGET_US = 200 µs`).
-- Collecte et transmet périodiquement les métriques de santé ESP32-S3.
-- Temps d'exécution mesuré : ~45 µs (≤ 100 µs en moyenne, ≤ 1 ms au maximum).
+Ferme la socket TCP, libère le buffer PSRAM et réinitialise tous les états à `DISABLED`.
 
 ---
 
-## 4. Libération des Ressources : `debug.end()`
+### 4. Journalisation Multi-Tâches (Thread-Safe)
 
-```cpp
-void debug.end();
-```
-
-Ferme proprement la socket TCP, libère le buffer circulaire de la mémoire PSRAM et réinitialise tous les états internes à `DISABLED`.
-
----
-
-## 5. Méthodes de Journalisation
-
-### 5.1 Journalisation Simple (Chaînes C constantes)
+Toutes les méthodes de log sont sécurisées pour des appels simultanés depuis plusieurs tâches FreeRTOS :
 
 ```cpp
 debug.trace(const char* tag, const char* message);
@@ -77,88 +56,36 @@ debug.debug(const char* tag, const char* message);
 debug.info(const char* tag, const char* message);
 debug.warn(const char* tag, const char* message);
 debug.error(const char* tag, const char* message);
-```
 
-Exemple :
-```cpp
-debug.info("SYSTEM", "Application démarrée");
-debug.warn("AUDIO", "Sous-remplissage du tampon audio I2S");
-debug.error("NETWORK", "Échec de résolution DNS hôte distant");
-```
-
-### 5.2 Journalisation Formatée (Type `printf`)
-
-Toutes les méthodes formatées bénéficient du contrôle de syntaxe par le compilateur GCC (`__attribute__((format(printf, ...)))`) :
-
-```cpp
-debug.tracef(const char* tag, const char* format, ...);
-debug.debugf(const char* tag, const char* format, ...);
 debug.infof(const char* tag, const char* format, ...);
 debug.warnf(const char* tag, const char* format, ...);
 debug.errorf(const char* tag, const char* format, ...);
-debug.logf(uint8_t level, const char* tag, const char* format, ...);
 ```
 
-Exemple :
-```cpp
-debug.infof("SENSORS", "Température = %.2f °C, Humidité = %d %%", temp, hum);
-debug.warnf("TASK", "Tâche %s : temps de calcul excessif (%lu µs)", taskName, duration);
-```
+**Règles d'utilisation :**
+1. **Multi-tâches** : Entièrement sécurisé entre Core 0 et Core 1. Les numéros de séquence reflètent fidèlement l'ordre physique d'insertion.
+2. **Formatage sur pile** : Le formatage JSON coûteux s'exécute hors section critique sur la pile appelante.
+3. **Interdiction ISR** : Les appels depuis une routine d'interruption matérielle (ISR) sont formellement interdits et automatiquement ignorés pour préserver la stabilité du système.
 
 ---
 
-## 6. Métriques et États Personnalisés
+### 5. Métriques et États
 
 ```cpp
-// Métrique numérique (int ou double)
 debug.metric("cpu_load", 35.5);
-debug.metric("packet_count", 1024);
-
-// État d'une machine d'états
-debug.state("PTT_BUTTON", "PRESSED");
-debug.state("AUDIO_ENGINE", "STREAMING");
+debug.metric("battery_mv", 4150);
+debug.state("DEMO_STATE", "RUNNING");
 ```
-
-Ces données apparaissent instantanément dans l'onglet **Variables & États** de l'interface Web sans aucune configuration côté PC.
 
 ---
 
-## 7. Inspection et Métrologie
+### 6. Rapport Standardisé & Inspection
 
 ```cpp
-bool isConnected = debug.isConnected();
+// Imprime le rapport de diagnostic complet (sur Serial par défaut)
+debug.printReport(Serial);
+
 DebugStats stats = debug.getStats();
-const char* stateStr = debug.getStateString();
+const char* state = debug.getStateString();
+const char* bootId = debug.getBootId();
 ```
-
-### Structure `DebugStats`
-```cpp
-struct DebugStats {
-    uint32_t queued;        // Messages placés dans le buffer
-    uint32_t sent;          // Octets transmis sur la socket
-    uint32_t dropped;       // Messages abandonnés (buffer plein)
-    uint32_t truncated;     // Messages tronqués (> 512 octets)
-    uint32_t reconnects;    // Nombre de reconnexions TCP opérées
-    uint32_t avgUpdateUs;   // Temps moyen d'exécution de debug.update()
-    uint32_t maxUpdateUs;   // Temps maximal observé de debug.update()
-    size_t sramUsed;        // Octets SRAM consommés par la bibliothèque
-    size_t psramUsed;       // Octets PSRAM consommés par le buffer
-};
-```
-
----
-
-## 8. Désactivation Totale à la Compilation
-
-Pour éliminer intégralement l'empreinte de la bibliothèque (par exemple en production finale) :
-
-```cpp
-#define DEBUG_AGENT_ENABLED 0
-```
-*(ou dans `platformio.ini` : `build_flags = -DDEBUG_AGENT_ENABLED=0`)*
-
-Lorsque cette macro vaut `0` :
-- Tous les appels de méthode sont déclarés `inline` vides et totalement élidés par l'optimiseur GCC/Clang.
-- Aucun buffer n'est alloué en SRAM ou PSRAM.
-- Aucun objet de socket ou tâche de transport n'est instancié.
-- L'empreinte binaire additionnelle est de **0 octet**.

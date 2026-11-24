@@ -15,5 +15,5 @@
 
   #define DEVICE_NAME     "CoreS3-01"
   #define APP_NAME        "BasicDiagnostics"
-  #define APP_VERSION     "0.1.0"
+  #define APP_VERSION     "0.1.0.1"
 #endif

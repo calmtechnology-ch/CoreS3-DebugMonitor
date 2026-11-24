@@ -50,6 +50,6 @@ test.describe('CoreS3-DebugMonitor Web UI', () => {
         await btnExport.click();
 
         const preview = page.locator('#reportPreviewContent');
-        await expect(preview).toContainText('Rapport de Diagnostic');
+        await expect(preview).toContainText('RELIABILITY REPORT');
     });
 });

@@ -150,7 +150,7 @@ async function startServer() {
     // Print setup banner and instructions
     const ips = getAvailableIPv4Addresses();
     console.log('\n' + '='.repeat(68));
-    console.log('       CoreS3-DebugMonitor v0.1.0 - Technical Server');
+    console.log('       CoreS3-DebugMonitor v0.1.0.1 - Technical Server');
     console.log('='.repeat(68));
     console.log(` Web Interface:   http://localhost:${httpPort}`);
     console.log(` TCP Diagnostics: 0.0.0.0:${tcpPort}`);

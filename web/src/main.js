@@ -258,17 +258,43 @@ class App {
 
         const avgUs = metrics.avg_update_us || 0;
         const maxUs = metrics.max_update_us || 0;
+        const budgetOverruns = stats.budgetOverruns || metrics.budget_overruns || 0;
+        const overruns1ms = stats.updateOverruns1ms || metrics.overruns_1ms || 0;
 
-        document.getElementById('diagAvgUpdate').textContent = `${avgUs} µs`;
-        document.getElementById('diagMaxUpdate').textContent = `${maxUs} µs`;
+        const elAvg = document.getElementById('diagAvgUpdate');
+        const elMax = document.getElementById('diagMaxUpdate');
+        const elOverruns = document.getElementById('diagBudgetOverruns');
+        const elOver1ms = document.getElementById('diagOverruns1ms');
 
-        document.getElementById('diagInvalidCount').textContent = stats.invalidCount || 0;
-        document.getElementById('diagTruncatedCount').textContent = stats.truncated || 0;
+        if (elAvg) elAvg.textContent = `${avgUs} µs`;
+        if (elMax) elMax.textContent = `${maxUs} µs`;
+        if (elOverruns) elOverruns.textContent = `${budgetOverruns}`;
+        if (elOver1ms) elOver1ms.textContent = `${overruns1ms}`;
 
-        const dropped = stats.droppedByDevice || 0;
-        const received = stats.received || 1;
-        const saturation = ((dropped / (dropped + received)) * 100).toFixed(2);
-        document.getElementById('diagBufferSaturation').textContent = `${saturation} %`;
+        // Memory elements
+        const elDynSram = document.getElementById('diagDynamicSram');
+        const elDynPsram = document.getElementById('diagDynamicPsram');
+        if (elDynSram) elDynSram.textContent = `${Math.round((metrics.heap || 0) / 1024)} Ko`;
+        if (elDynPsram) elDynPsram.textContent = `${Math.round((metrics.psram || 0) / 1024)} Ko`;
+
+        // Buffer & Reliability elements
+        const bufUsed = stats.bufferUsed || 0;
+        const bufCap = stats.bufferCapacity || 8192;
+        const bufHwm = stats.bufferHighWatermark || 0;
+
+        const elBufUsed = document.getElementById('diagBufferUsed');
+        const elBufHwm = document.getElementById('diagBufferHwm');
+        const elDropped = document.getElementById('diagDroppedCount');
+        const elDuplicate = document.getElementById('diagDuplicateCount');
+        const elSocketErrors = document.getElementById('diagSocketErrors');
+        const elTruncated = document.getElementById('diagTruncatedCount');
+
+        if (elBufUsed) elBufUsed.textContent = `${bufUsed} / ${bufCap} octets`;
+        if (elBufHwm) elBufHwm.textContent = `${bufHwm} octets`;
+        if (elDropped) elDropped.textContent = stats.droppedByDevice ?? 0;
+        if (elDuplicate) elDuplicate.textContent = stats.duplicatesCount ?? 0;
+        if (elSocketErrors) elSocketErrors.textContent = stats.socketErrors ?? 0;
+        if (elTruncated) elTruncated.textContent = stats.truncated ?? 0;
     }
 
     initDiagnosticsExport() {
@@ -294,36 +320,65 @@ class App {
 
     displayReport(report) {
         const preview = document.getElementById('reportPreviewContent');
+        if (report.standardReportText) {
+            preview.textContent = report.standardReportText;
+            return;
+        }
+
+        const metrics = report.currentMetrics || {};
+        const stats = report.stats || {};
+        const conn = report.connection || {};
+        const dev = report.device || {};
+
         const md = [
-            `# Rapport de Diagnostic CoreS3-DebugMonitor v0.1.0`,
-            `Généré le : ${report.timestamp || new Date().toISOString()}`,
+            `========================================================`,
+            ` CoreS3-DebugMonitor v0.1.0.1`,
+            ` NON-BLOCKING & MEMORY RELIABILITY REPORT`,
+            `========================================================`,
             ``,
-            `## 1. Identité Matériel & Logiciel`,
-            `- **Appareil** : ${report.device?.device || 'N/A'}`,
-            `- **Application** : ${report.device?.app || 'N/A'}`,
-            `- **Version** : ${report.device?.version || 'N/A'}`,
-            `- **Adresse IP** : ${report.connection?.ip || 'N/A'}`,
-            `- **Uptime** : ${report.connection?.uptimeSec || 0} secondes`,
-            `- **État Connexion** : ${report.connection?.connected ? 'CONNECTÉ' : 'DÉCONNECTÉ'}`,
+            `[DEVICE]`,
+            `Firmware: ${dev.app || 'N/A'} (${dev.version || '0.1.0.1'})`,
+            `BootId: ${dev.bootId || 'N/A'}`,
+            `Uptime: ${conn.uptimeSec || 0} s`,
+            `Wi-Fi RSSI: ${metrics.rssi || 0} dBm`,
+            `Transport state: ${conn.connected ? 'CONNECTED' : 'DISCONNECTED'}`,
             ``,
-            `## 2. Performances & Consommation Mémoire (DebugAgent)`,
-            `- **Temps moyen debug.update()** : ${report.currentMetrics?.avg_update_us || 0} µs (Objectif: ≤ 100 µs)`,
-            `- **Temps maximal debug.update()** : ${report.currentMetrics?.max_update_us || 0} µs (Objectif: ≤ 1000 µs)`,
-            `- **SRAM consommée par DebugAgent** : ~1.5 Ko (Objectif: ≤ 20 Ko)`,
-            `- **PSRAM allouée (Buffer circulaire)** : 8.0 Ko (Objectif: ≤ 10 Ko)`,
+            `[MEMORY]`,
+            `SRAM current: ${metrics.heap || 0} bytes (${Math.round((metrics.heap || 0) / 1024)} KB)`,
+            `SRAM minimum: ${metrics.min_heap || 0} bytes (${Math.round((metrics.min_heap || 0) / 1024)} KB)`,
+            `Largest free SRAM block: ${metrics.max_alloc || 0} bytes (${Math.round((metrics.max_alloc || 0) / 1024)} KB)`,
+            `PSRAM available: ${metrics.psram || 0} bytes (${Math.round((metrics.psram || 0) / 1024)} KB)`,
+            `PSRAM allocated: 8192 bytes (8.0 KB)`,
+            `Static footprint: ~1520 bytes (BSS/Data)`,
             ``,
-            `## 3. Fiabilité & Statistiques Réseau`,
-            `- **Messages reçus au total** : ${report.stats?.received || 0}`,
-            `- **Messages perdus (drop CoreS3)** : ${report.stats?.droppedByDevice || 0}`,
-            `- **Messages perdus en transit** : ${report.stats?.lostInTransit || 0}`,
-            `- **Messages tronqués (> 512 octets)** : ${report.stats?.truncated || 0}`,
-            `- **Messages invalides rejetés** : ${report.stats?.invalidCount || 0}`,
-            `- **Nombre de reconnexions** : ${report.stats?.reconnects || 0}`,
+            `[BUFFER]`,
+            `Capacity: ${stats.bufferCapacity || 8192} bytes`,
+            `Current usage: ${stats.bufferUsed || 0} bytes`,
+            `High watermark: ${stats.bufferHighWatermark || 0} bytes`,
+            `Pending messages: ${(stats.messagesEnqueued || 0) - (stats.messagesSent || 0)}`,
+            `Dropped messages: ${stats.droppedByDevice || 0}`,
+            `Truncated messages: ${stats.truncated || 0}`,
             ``,
-            `## 4. États & Métriques Personnalisées`,
-            `\`\`\`json`,
-            JSON.stringify({ customMetrics: report.customMetrics, states: report.states }, null, 2),
-            `\`\`\``
+            `[TRANSPORT]`,
+            `Successful connections: ${conn.connected ? 1 : 0}`,
+            `Reconnects: ${stats.reconnects || 0}`,
+            `Socket errors: ${stats.socketErrors || 0}`,
+            `Messages sent: ${stats.messagesSent || stats.received || 0}`,
+            `Bytes sent: ${stats.bytesSent || 0}`,
+            ``,
+            `[PERFORMANCE]`,
+            `Average update: ${metrics.avg_update_us || 0} us`,
+            `Maximum update: ${metrics.max_update_us || 0} us`,
+            `Budget overruns (> 200 us): ${stats.budgetOverruns || 0}`,
+            `Overruns above 1 ms: ${stats.updateOverruns1ms || 0}`,
+            ``,
+            `[PROTOCOL]`,
+            `Invalid JSON: ${stats.invalidCount || 0}`,
+            `Duplicate messages: ${stats.duplicatesCount || 0}`,
+            `Sequence gaps: ${stats.sequenceGaps || 0}`,
+            `Lost in transit: ${stats.lostInTransit || 0}`,
+            ``,
+            `========================================================`
         ].join('\n');
 
         preview.textContent = md;

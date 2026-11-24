@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CoreS3-DebugMonitor v0.1.0</title>
+    <title>CoreS3-DebugMonitor v0.1.0.1</title>
     <link rel="stylesheet" href="/src/style.css">
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><circle cx='50' cy='50' r='30' fill='%2338bdf8'/><path d='M35 50h30M50 35v30' stroke='%230f172a' stroke-width='8'/></svg>">
 </head>
@@ -13,7 +13,7 @@
             <div class="logo-badge">CoreS3</div>
             <div class="title-group">
                 <h1>DebugMonitor</h1>
-                <span class="version-tag">v0.1.0</span>
+                <span class="version-tag">v0.1.0.1</span>
             </div>
         </div>
 
@@ -249,7 +249,7 @@
                 <div class="card">
                     <div class="card-header">
                         <h3>Performances DebugAgent</h3>
-                        <span class="card-tag">Microsecondes</span>
+                        <span class="card-tag">Budget coopératif</span>
                     </div>
                     <div class="stats-list">
                         <div class="stat-row">
@@ -261,62 +261,70 @@
                             <span class="stat-value" id="diagMaxUpdate">0 µs</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Objectif cible moyen</span>
-                            <span class="stat-value success">≤ 100 µs</span>
+                            <span class="stat-label">Dépassements budget (> 200 µs)</span>
+                            <span class="stat-value warning" id="diagBudgetOverruns">0</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Objectif cible maximal</span>
-                            <span class="stat-value success">≤ 1000 µs</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card">
-                    <div class="card-header">
-                        <h3>Empreinte Mémoire Agent</h3>
-                        <span class="card-tag">Mesurée</span>
-                    </div>
-                    <div class="stats-list">
-                        <div class="stat-row">
-                            <span class="stat-label">SRAM allouée (DebugAgent)</span>
-                            <span class="stat-value" id="diagSramUsed">~0.8 Ko</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">PSRAM allouée (Buffer circulaire)</span>
-                            <span class="stat-value highlight" id="diagPsramUsed">8.0 Ko</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Objectif max SRAM</span>
-                            <span class="stat-value success">≤ 20 Ko (Respecté)</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Objectif max PSRAM</span>
-                            <span class="stat-value success">≤ 10 Ko (Respecté)</span>
+                            <span class="stat-label">Dépassements critiques (> 1 ms)</span>
+                            <span class="stat-value warning" id="diagOverruns1ms">0</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="card">
                     <div class="card-header">
-                        <h3>Qualité Flux & Réseau</h3>
-                        <span class="card-tag">Intégrité</span>
+                        <h3>Empreinte Mémoire</h3>
+                        <span class="card-tag">ESP32-S3</span>
                     </div>
                     <div class="stats-list">
                         <div class="stat-row">
-                            <span class="stat-label">Débit de réception</span>
-                            <span class="stat-value" id="diagRxRate">0 msg/s</span>
+                            <span class="stat-label">Mémoire statique BSS/Data (estimée)</span>
+                            <span class="stat-value" id="diagStaticSram">~1.5 Ko (compilation)</span>
                         </div>
                         <div class="stat-row">
-                            <span class="stat-label">Messages invalides rejetés</span>
-                            <span class="stat-value" id="diagInvalidCount">0</span>
+                            <span class="stat-label">SRAM interne libre (mesurée)</span>
+                            <span class="stat-value highlight" id="diagDynamicSram">- Ko</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">PSRAM libre (mesurée)</span>
+                            <span class="stat-value highlight" id="diagDynamicPsram">- Ko</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Buffer circulaire en PSRAM (fixe)</span>
+                            <span class="stat-value success" id="diagPsramAlloc">8192 octets</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Tampon & Intégrité NDJSON</h3>
+                        <span class="card-tag">Fiabilité réseau</span>
+                    </div>
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <span class="stat-label">Occupation buffer (actuelle / cap)</span>
+                            <span class="stat-value" id="diagBufferUsed">0 / 8192 octets</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Occupation maximale (High Watermark)</span>
+                            <span class="stat-value" id="diagBufferHwm">0 octets</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Messages abandonnés (Drop CoreS3)</span>
+                            <span class="stat-value warning" id="diagDroppedCount">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Messages dupliqués détectés</span>
+                            <span class="stat-value warning" id="diagDuplicateCount">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Erreurs socket & déconnexions</span>
+                            <span class="stat-value warning" id="diagSocketErrors">0</span>
                         </div>
                         <div class="stat-row">
                             <span class="stat-label">Messages tronqués (> 512 octets)</span>
                             <span class="stat-value" id="diagTruncatedCount">0</span>
-                        </div>
-                        <div class="stat-row">
-                            <span class="stat-label">Saturation de buffer</span>
-                            <span class="stat-value" id="diagBufferSaturation">0 %</span>
                         </div>
                     </div>
                 </div>

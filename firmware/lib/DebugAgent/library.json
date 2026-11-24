@@ -1,6 +1,6 @@
 {
   "name": "DebugAgent",
-  "version": "0.1.0",
+  "version": "0.1.0.1",
   "description": "Lightweight, non-blocking network diagnostics library for ESP32-S3",
   "keywords": [
     "debug",

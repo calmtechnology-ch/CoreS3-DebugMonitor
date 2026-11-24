@@ -1,50 +1,34 @@
-# Spécification du Protocole NDJSON — CoreS3-DebugMonitor v0.1.0
+# Spécification du Protocole NDJSON — CoreS3-DebugMonitor v0.1.0.1
+## Non-Blocking & Memory Reliability
 
-Le protocole de communication repose sur le standard **NDJSON** (*Newline Delimited JSON*) : chaque message est un objet JSON compact valide encodé en UTF-8 et terminé par un caractère de fin de ligne `\n` (ou `\r\n`).
-
-Le CoreS3 se connecte en tant que client TCP sur le port `9000` du PC hôte.
-
----
-
-## 1. Principes Généraux
-
-- **Encodage** : UTF-8 strict (support natif des accents français : `é`, `è`, `à`, `ç`, etc.).
-- **Délimiteur** : `\n` (LF) ou `\r\n` (CRLF).
-- **Numérotation de séquence** : Chaque message (sauf `hello` et `stats`) contient un champ monotonique croissant `seq` permettant au serveur PC de détecter les paquets perdus en cas de rupture de flux.
-- **Horodatage firmware** : Champ `ms` correspondant au temps écoulé depuis le démarrage (`millis()`).
-- **Horodatage PC** : Le serveur PC injecte à la réception `rxTime` (ISO 8601) et `rxMs` (millisecondes Unix).
-- **Taille maximale** : 512 octets par message émis par le firmware (limite maximale autorisée par le serveur PC : 16 384 octets).
+Le protocole repose sur le standard **NDJSON** (*Newline Delimited JSON*) : chaque message est un objet JSON compact valide encodé en UTF-8 et terminé par `\n` (ou `\r\n`).
 
 ---
 
-## 2. Messages du Protocole
+### 1. Principes Généraux
+- **Encodage** : UTF-8 strict (protection contre la scission de caractères multi-octets).
+- **Handshake Prioritaire** : À chaque nouvelle connexion TCP, le message `hello` est transmis en premier. Aucun log ni métrique n'est émis avant l'acceptation intégrale du `hello`.
+- **Numérotation de séquence** : Champ monotonique `seq` reflétant l'ordre exact d'insertion dans le buffer circulaire.
+- **Identifiant de session (`bootId`)** : Identifiant stable pendant toute la durée d'exécution du firmware, permettant au serveur de distinguer une reconnexion TCP d'un redémarrage matériel.
+- **Détection des doublons** : Le serveur détecte les messages réémis (`seq <= lastSeq`).
 
-### 2.1 Message d'Identification (`hello`)
-Émis immédiatement après l'établissement de la socket TCP par le CoreS3.
+---
 
+### 2. Messages du Protocole
+
+#### 2.1 Handshake d'Identification (`hello`)
 ```json
 {
   "type": "hello",
   "protocol": 1,
   "device": "CoreS3-01",
   "app": "BasicDiagnostics",
-  "version": "0.1.0"
+  "version": "0.1.0.1",
+  "bootId": "441B32A9C08F7E1D"
 }
 ```
 
-| Champ | Type | Description |
-|---|---|---|
-| `type` | string | `"hello"` |
-| `protocol` | integer | Version du protocole (actuellement `1`) |
-| `device` | string | Identifiant ou nom du périphérique |
-| `app` | string | Nom de l'application firmware |
-| `version` | string | Version sémantique de l'application |
-
----
-
-### 2.2 Message de Journalisation (`log`)
-Transmet une ligne de journalisation avec son niveau de sévérité et sa catégorie.
-
+#### 2.2 Journalisation (`log`)
 ```json
 {
   "type": "log",
@@ -56,53 +40,26 @@ Transmet une ligne de journalisation avec son niveau de sévérité et sa catég
 }
 ```
 
-| Champ | Type | Description |
-|---|---|---|
-| `type` | string | `"log"` |
-| `seq` | integer | Numéro de séquence monotonique |
-| `ms` | integer | Horodatage firmware en millisecondes |
-| `level` | string | `"TRACE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"` |
-| `tag` | string | Catégorie ou module émetteur (ex: `"SYSTEM"`, `"AUDIO"`, `"WIFI"`) |
-| `message` | string | Contenu textuel avec échappement JSON valide |
-
----
-
-### 2.3 Métriques Système Périodiques (`metrics`)
-Transmis par défaut chaque seconde (`DEBUG_METRIC_INTERVAL = 1000`).
-
+#### 2.3 Métriques Périodiques (`metrics`)
 ```json
 {
   "type": "metrics",
   "seq": 43,
   "ms": 13000,
-  "heap": 147256,
-  "min_heap": 132400,
-  "max_alloc": 128500,
-  "psram": 8052100,
+  "heap": 142100,
+  "min_heap": 138540,
+  "max_alloc": 114688,
+  "psram": 8380416,
   "rssi": -48,
-  "avg_update_us": 45,
-  "max_update_us": 120
+  "avg_update_us": 38,
+  "max_update_us": 145,
+  "min_update_us": 1,
+  "budget_overruns": 0,
+  "overruns_1ms": 0
 }
 ```
 
-| Champ | Type | Description |
-|---|---|---|
-| `type` | string | `"metrics"` |
-| `seq` | integer | Numéro de séquence monotonique |
-| `ms` | integer | Horodatage firmware |
-| `heap` | integer | Mémoire SRAM interne disponible en octets |
-| `min_heap` | integer | Plus basse SRAM observée depuis le boot |
-| `max_alloc` | integer | Plus grand bloc contigu de SRAM allouable |
-| `psram` | integer | Mémoire PSRAM externe disponible en octets |
-| `rssi` | integer | Puissance du signal Wi-Fi en dBm |
-| `avg_update_us` | integer | Temps moyen d'exécution de `debug.update()` en microsecondes |
-| `max_update_us` | integer | Temps maximal observé de `debug.update()` en microsecondes |
-
----
-
-### 2.4 Métrique Personnalisée Découvrable (`metric`)
-Permet au développeur d'exposer n'importe quelle variable numérique sans reconfigurer l'IHM.
-
+#### 2.4 Métrique Personnalisée (`metric`)
 ```json
 {
   "type": "metric",
@@ -113,11 +70,7 @@ Permet au développeur d'exposer n'importe quelle variable numérique sans recon
 }
 ```
 
----
-
-### 2.5 État Découvrable (`state`)
-Permet de suivre l'état d'une machine à états ou d'un automate (ex : PTT, Wi-Fi, Audio).
-
+#### 2.5 État Découvrable (`state`)
 ```json
 {
   "type": "state",
@@ -128,39 +81,27 @@ Permet de suivre l'état d'une machine à états ou d'un automate (ex : PTT, Wi-
 }
 ```
 
----
-
-### 2.6 Statistiques Internes DebugAgent (`stats`)
-Transmis périodiquement pour auditer le comportement de la bibliothèque.
-
+#### 2.6 Statistiques Détaillées DebugAgent (`stats`)
 ```json
 {
   "type": "stats",
-  "queued": 1250,
+  "seq": 46,
+  "ms": 15000,
+  "attempted": 1250,
+  "enqueued": 1250,
+  "sent": 1248,
   "dropped": 0,
   "truncated": 0,
-  "reconnects": 1
+  "bytes_sent": 84210,
+  "buf_used": 240,
+  "buf_cap": 8192,
+  "buf_hwm": 3120,
+  "connects": 1,
+  "reconnects": 0,
+  "sock_errors": 0,
+  "avg_us": 38,
+  "max_us": 145,
+  "overruns": 0,
+  "overruns_1ms": 0
 }
 ```
-
-| Champ | Type | Description |
-|---|---|---|
-| `queued` | integer | Nombre total de messages placés dans le buffer |
-| `dropped` | integer | Nombre de messages abandonnés suite à saturation du buffer |
-| `truncated` | integer | Messages ayant dépassé la taille maximale autorisée |
-| `reconnects` | integer | Nombre de reconnexions TCP opérées |
-
----
-
-## 3. Gestion de la Fragmentation et des Pertes
-
-### Fragmentation TCP
-Les sockets TCP fonctionnent par flux d'octets. Une ligne NDJSON peut être morcelée sur plusieurs réceptions réseau. Le module `ProtocolParser` côté serveur stocke les fragments jusqu'à détection du délimiteur `\n`.
-
-### Regroupement de Paquets (Coalescing)
-Plusieurs messages NDJSON émis rapidement peuvent arriver dans un unique paquet TCP. Le serveur extrait l'ensemble des lignes complètes dans une seule boucle synchrone.
-
-### Détection de Pertes en Transit
-Le `DeviceManager` compare chaque `msg.seq` reçu :
-$$\Delta = \text{seq} - (\text{lastSeq} + 1)$$
-Si $\Delta > 0$, $\Delta$ messages ont été perdus en transit ou abandonnés par le firmware avant transmission.

@@ -1,6 +1,8 @@
 #pragma once
 
 #include "DebugConfig.h"
+#include <Arduino.h>
+#include <Print.h>
 
 #if DEBUG_AGENT_ENABLED
 
@@ -8,6 +10,7 @@
 #include "DebugProtocol.h"
 #include "DebugTransport.h"
 #include <stdarg.h>
+#include <Print.h>
 
 class DebugAgent {
 public:
@@ -45,24 +48,33 @@ public:
     bool isConnected() const;
     DebugStats getStats() const;
     const char* getStateString() const;
+    const char* getBootId() const;
+
+    // Diagnostic reporting to Serial / Print
+    void printReport(Print& out = Serial);
 
 private:
-    void enqueueLine(const char* line, size_t len);
-    void sendPeriodicMetrics();
+    void enqueueWithSeq(char* lineBuf, size_t len, size_t seqOffset);
+    void sendPeriodicMetrics(int64_t startUs);
 
     DebugConfig _config;
     DebugBuffer _buffer;
     DebugTransport _transport;
     DebugStats _stats;
+
     uint32_t _seq;
     uint32_t _lastMetricMs;
     uint32_t _lastStatsMs;
     bool _initialized;
 
-    // Timing metrics
-    uint32_t _updateCount;
+    // Performance tracking
     uint64_t _updateTotalUs;
-    uint32_t _maxUpdateUs;
+    portMUX_TYPE _mux = portMUX_INITIALIZER_UNLOCKED;
+
+    // Memory benchmarks at boot
+    size_t _memBeforeAgentSram;
+    size_t _memAfterBeginSram;
+    size_t _memAfterTcpSram;
 };
 
 extern DebugAgent debug;
@@ -103,6 +115,8 @@ public:
     inline bool isConnected() const { return false; }
     inline DebugStats getStats() const { return DebugStats(); }
     inline const char* getStateString() const { return "DISABLED"; }
+    inline const char* getBootId() const { return ""; }
+    inline void printReport(Print& = Serial) {}
 };
 
 extern DebugAgent debug;

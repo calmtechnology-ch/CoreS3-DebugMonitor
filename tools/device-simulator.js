@@ -43,7 +43,8 @@ function sendHello() {
         protocol: 1,
         device: 'CoreS3-Sim',
         app: 'BasicDiagnostics',
-        version: '0.1.0'
+        version: '0.1.0.1',
+        bootId: 'SIM-BOOT-001'
     });
     console.log('[SIM] Sent HELLO');
 }
