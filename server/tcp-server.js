@@ -15,12 +15,14 @@ export function createTcpServer(deviceManager, port = 9000, host = '0.0.0.0') {
             const lines = parser.push(chunk);
             for (const item of lines) {
                 if (typeof item === 'object' && item.error) {
+                    console.log(`[TCP DEBUG ${remoteIp}] parser error:`, JSON.stringify(item));
                     deviceManager.recordInvalid(socket, item);
                     continue;
                 }
 
                 const result = parseAndValidateMessage(item);
                 if (!result.valid) {
+                    console.log(`[TCP DEBUG ${remoteIp}] validate error:`, JSON.stringify(result), 'item was:', JSON.stringify(item));
                     deviceManager.recordInvalid(socket, result);
                     continue;
                 }
@@ -33,6 +35,7 @@ export function createTcpServer(deviceManager, port = 9000, host = '0.0.0.0') {
                         helloReceived = true;
                         deviceManager.handleMessage(socket, msg);
                     } else {
+                        console.log(`[TCP DEBUG ${remoteIp}] HELLO_REQUIRED: received type:`, msg.type);
                         deviceManager.recordInvalid(socket, {
                             error: 'HELLO_REQUIRED',
                             message: `First message on connection must be 'hello', received '${msg.type}'`,
