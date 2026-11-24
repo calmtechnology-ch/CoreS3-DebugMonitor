@@ -19,18 +19,28 @@ const tcpPort = parseInt(process.env.TCP_PORT || '9000', 10);
 
 const deviceManager = new DeviceManager(5000, 120);
 
-// Helper to list network interfaces
+// Helper to list network interfaces, prioritizing physical (Wi-Fi, Ethernet) over virtual (WSL, Hyper-V, Docker)
 function getAvailableIPv4Addresses() {
     const interfaces = os.networkInterfaces();
     const addresses = [];
+    const virtualRegex = /(vEthernet|WSL|Hyper-V|VirtualBox|VMware|docker|veth)/i;
+
     for (const [ifaceName, ifaceList] of Object.entries(interfaces)) {
         if (!ifaceList) continue;
         for (const addr of ifaceList) {
             if (addr.family === 'IPv4' && !addr.internal) {
-                addresses.push({ interface: ifaceName, address: addr.address });
+                const isVirtual = virtualRegex.test(ifaceName);
+                addresses.push({ interface: ifaceName, address: addr.address, isVirtual });
             }
         }
     }
+
+    // Sort physical adapters first (Wi-Fi, Ethernet), virtual adapters last
+    addresses.sort((a, b) => {
+        if (a.isVirtual === b.isVirtual) return 0;
+        return a.isVirtual ? 1 : -1;
+    });
+
     return addresses;
 }
 
