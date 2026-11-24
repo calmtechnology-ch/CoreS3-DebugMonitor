@@ -1,0 +1,21 @@
+{
+  "name": "DebugAgent",
+  "version": "0.1.0",
+  "description": "Lightweight, non-blocking network diagnostics library for ESP32-S3",
+  "keywords": [
+    "debug",
+    "logging",
+    "diagnostics",
+    "tcp",
+    "ndjson",
+    "esp32s3",
+    "cores3"
+  ],
+  "authors": [
+    {
+      "name": "CoreS3-DebugMonitor Contributors"
+    }
+  ],
+  "frameworks": "arduino",
+  "platforms": "espressif32"
+}

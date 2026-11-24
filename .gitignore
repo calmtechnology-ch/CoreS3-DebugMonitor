@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.pio/
+.vscode/
+test-results/
+playwright-report/
+AppConfig.local.h
+*.log

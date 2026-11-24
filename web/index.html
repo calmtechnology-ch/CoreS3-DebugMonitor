@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoreS3-DebugMonitor v0.1.0</title>
+    <link rel="stylesheet" href="/src/style.css">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231e293b'/><circle cx='50' cy='50' r='30' fill='%2338bdf8'/><path d='M35 50h30M50 35v30' stroke='%230f172a' stroke-width='8'/></svg>">
+</head>
+<body class="dark-theme">
+    <header class="app-header">
+        <div class="header-left">
+            <div class="logo-badge">CoreS3</div>
+            <div class="title-group">
+                <h1>DebugMonitor</h1>
+                <span class="version-tag">v0.1.0</span>
+            </div>
+        </div>
+
+        <nav class="nav-tabs" id="navTabs">
+            <button class="nav-btn active" data-tab="dashboard">
+                <span class="tab-icon">📊</span> Dashboard
+            </button>
+            <button class="nav-btn" data-tab="console">
+                <span class="tab-icon">💻</span> Console
+                <span class="badge" id="logCountBadge">0</span>
+            </button>
+            <button class="nav-btn" data-tab="variables">
+                <span class="tab-icon">⚡</span> Variables & États
+                <span class="badge" id="varCountBadge">0</span>
+            </button>
+            <button class="nav-btn" data-tab="diagnostics">
+                <span class="tab-icon">🛠️</span> Diagnostics
+            </button>
+        </nav>
+
+        <div class="header-right">
+            <div class="connection-status" id="wsStatus">
+                <span class="status-dot disconnected"></span>
+                <span class="status-text" id="wsStatusText">Connexion...</span>
+            </div>
+            <div class="device-pill" id="devicePill">
+                <span class="device-name" id="pillDeviceName">Non détecté</span>
+                <span class="device-ip" id="pillDeviceIp">-</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="app-main">
+        <!-- 1. DASHBOARD TAB -->
+        <section class="tab-pane active" id="tabDashboard">
+            <div class="cards-grid">
+                <!-- Device Overview Card -->
+                <div class="card card-device">
+                    <div class="card-header">
+                        <h3>Informations Matériel</h3>
+                        <span class="card-badge" id="dashDeviceStatus">Déconnecté</span>
+                    </div>
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <span class="stat-label">Appareil</span>
+                            <span class="stat-value" id="dashDeviceName">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Application</span>
+                            <span class="stat-value" id="dashAppName">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Adresse IP</span>
+                            <span class="stat-value" id="dashDeviceIp">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Uptime</span>
+                            <span class="stat-value" id="dashUptime">-</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Signal Wi-Fi (RSSI)</span>
+                            <span class="stat-value highlight" id="dashRssi">- dBm</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Memory Overview Card -->
+                <div class="card card-memory">
+                    <div class="card-header">
+                        <h3>Mémoire ESP32-S3</h3>
+                        <span class="card-tag">Temps réel</span>
+                    </div>
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <span class="stat-label">SRAM disponible</span>
+                            <span class="stat-value" id="dashSram">- Ko</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">SRAM minimale observée</span>
+                            <span class="stat-value" id="dashMinSram">- Ko</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Plus grand bloc SRAM</span>
+                            <span class="stat-value" id="dashMaxAllocSram">- Ko</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">PSRAM libre</span>
+                            <span class="stat-value highlight" id="dashPsram">- Ko</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Traffic & Health Card -->
+                <div class="card card-traffic">
+                    <div class="card-header">
+                        <h3>Transmission & Fiabilité</h3>
+                        <span class="card-tag">NDJSON TCP</span>
+                    </div>
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <span class="stat-label">Messages reçus</span>
+                            <span class="stat-value" id="dashReceived">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Messages perdus (drop CoreS3)</span>
+                            <span class="stat-value warning" id="dashDropped">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Messages perdus en transit</span>
+                            <span class="stat-value warning" id="dashLost">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Reconnexions</span>
+                            <span class="stat-value" id="dashReconnects">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-container">
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h4>Évolution Mémoire SRAM & PSRAM</h4>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="legend-color sram-color"></span> SRAM (Ko)</span>
+                            <span class="legend-item"><span class="legend-color psram-color"></span> PSRAM (Ko/10)</span>
+                        </div>
+                    </div>
+                    <canvas id="chartMemory" height="180"></canvas>
+                </div>
+
+                <div class="chart-card">
+                    <div class="chart-header">
+                        <h4>Signal Wi-Fi RSSI</h4>
+                        <div class="chart-legend">
+                            <span class="legend-item"><span class="legend-color rssi-color"></span> RSSI (dBm)</span>
+                        </div>
+                    </div>
+                    <canvas id="chartRssi" height="180"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. CONSOLE TAB -->
+        <section class="tab-pane" id="tabConsole">
+            <div class="console-toolbar">
+                <div class="filter-group">
+                    <label>Niveau:</label>
+                    <select id="logLevelFilter" class="toolbar-select">
+                        <option value="ALL">TOUS (All)</option>
+                        <option value="TRACE">TRACE</option>
+                        <option value="DEBUG">DEBUG</option>
+                        <option value="INFO" selected>INFO+</option>
+                        <option value="WARN">WARN+</option>
+                        <option value="ERROR">ERROR</option>
+                    </select>
+
+                    <label>Catégorie:</label>
+                    <select id="logTagFilter" class="toolbar-select">
+                        <option value="ALL">Toutes</option>
+                    </select>
+
+                    <div class="search-box">
+                        <input type="text" id="logSearchInput" placeholder="Rechercher dans les messages..." />
+                    </div>
+                </div>
+
+                <div class="action-group">
+                    <label class="toggle-control">
+                        <input type="checkbox" id="autoScrollToggle" checked />
+                        <span>Auto-scroll</span>
+                    </label>
+                    <button class="btn btn-secondary" id="btnPauseConsole">
+                        <span id="pauseIcon">⏸️</span> <span id="pauseText">Pause</span>
+                    </button>
+                    <button class="btn btn-secondary" id="btnClearConsole">Effacer</button>
+                    <button class="btn btn-secondary" id="btnCopyConsole">Copier</button>
+                    <button class="btn btn-secondary" id="btnExportTxt">Export TXT</button>
+                    <button class="btn btn-secondary" id="btnExportJson">Export JSON</button>
+                </div>
+            </div>
+
+            <div class="console-table-wrapper" id="consoleScrollContainer">
+                <table class="console-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 110px;">Réception</th>
+                            <th style="width: 90px;">Uptime</th>
+                            <th style="width: 80px;">Niveau</th>
+                            <th style="width: 100px;">Catégorie</th>
+                            <th>Message</th>
+                        </tr>
+                    </thead>
+                    <tbody id="consoleLogsBody">
+                        <!-- Real-time log entries inserted here -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="console-footer">
+                <span id="consoleStatusText">Lignes affichées: 0 (limite tampon: 1000)</span>
+            </div>
+        </section>
+
+        <!-- 3. VARIABLES ET ÉTATS TAB -->
+        <section class="tab-pane" id="tabVariables">
+            <div class="section-intro">
+                <h2>Variables et états dynamiques</h2>
+                <p>Détectés automatiquement à partir des flux <code>debug.metric()</code> et <code>debug.state()</code> du firmware CoreS3.</p>
+            </div>
+
+            <div class="vars-grid" id="variablesGrid">
+                <!-- Dynamically populated variable cards -->
+                <div class="empty-state" id="varsEmptyState">
+                    Aucune variable personnalisée ou état reçu pour le moment.
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. DIAGNOSTICS TAB -->
+        <section class="tab-pane" id="tabDiagnostics">
+            <div class="diag-header-action">
+                <div>
+                    <h2>Diagnostic Réseau & Performances Système</h2>
+                    <p>Mesures d'intégrité, latence et empreinte mémoire du DebugAgent.</p>
+                </div>
+                <button class="btn btn-primary" id="btnExportReport">
+                    📋 Exporter rapport de diagnostic (Antigravity)
+                </button>
+            </div>
+
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Performances DebugAgent</h3>
+                        <span class="card-tag">Microsecondes</span>
+                    </div>
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <span class="stat-label">Temps moyen debug.update()</span>
+                            <span class="stat-value highlight" id="diagAvgUpdate">0 µs</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Temps maximal debug.update()</span>
+                            <span class="stat-value" id="diagMaxUpdate">0 µs</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Objectif cible moyen</span>
+                            <span class="stat-value success">≤ 100 µs</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Objectif cible maximal</span>
+                            <span class="stat-value success">≤ 1000 µs</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Empreinte Mémoire Agent</h3>
+                        <span class="card-tag">Mesurée</span>
+                    </div>
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <span class="stat-label">SRAM allouée (DebugAgent)</span>
+                            <span class="stat-value" id="diagSramUsed">~0.8 Ko</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">PSRAM allouée (Buffer circulaire)</span>
+                            <span class="stat-value highlight" id="diagPsramUsed">8.0 Ko</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Objectif max SRAM</span>
+                            <span class="stat-value success">≤ 20 Ko (Respecté)</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Objectif max PSRAM</span>
+                            <span class="stat-value success">≤ 10 Ko (Respecté)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Qualité Flux & Réseau</h3>
+                        <span class="card-tag">Intégrité</span>
+                    </div>
+                    <div class="stats-list">
+                        <div class="stat-row">
+                            <span class="stat-label">Débit de réception</span>
+                            <span class="stat-value" id="diagRxRate">0 msg/s</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Messages invalides rejetés</span>
+                            <span class="stat-value" id="diagInvalidCount">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Messages tronqués (> 512 octets)</span>
+                            <span class="stat-value" id="diagTruncatedCount">0</span>
+                        </div>
+                        <div class="stat-row">
+                            <span class="stat-label">Saturation de buffer</span>
+                            <span class="stat-value" id="diagBufferSaturation">0 %</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Preview Area -->
+            <div class="report-preview-box">
+                <div class="report-header">
+                    <h4>Aperçu du Rapport de Diagnostic</h4>
+                    <button class="btn btn-secondary btn-sm" id="btnCopyReport">Copier le rapport</button>
+                </div>
+                <pre class="report-content" id="reportPreviewContent">// Cliquez sur "Exporter rapport de diagnostic" pour générer le bilan technique complet.</pre>
+            </div>
+        </section>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>
