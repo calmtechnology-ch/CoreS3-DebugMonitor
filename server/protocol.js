@@ -74,7 +74,17 @@ export function parseAndValidateMessage(rawLine) {
     try {
         parsed = JSON.parse(rawLine);
     } catch (err) {
-        return { valid: false, error: 'INVALID_JSON', details: err.message };
+        // Fallback: sanitize non-standard JSON with leading zeros on numeric literals (e.g. seq: 000000123)
+        if (typeof rawLine === 'string') {
+            try {
+                const sanitized = rawLine.replace(/(:\s*)0+([0-9]+)/g, '$1$2');
+                parsed = JSON.parse(sanitized);
+            } catch (fallbackErr) {
+                return { valid: false, error: 'INVALID_JSON', details: err.message };
+            }
+        } else {
+            return { valid: false, error: 'INVALID_JSON', details: err.message };
+        }
     }
 
     if (!parsed || typeof parsed !== 'object' || !parsed.type || typeof parsed.type !== 'string') {

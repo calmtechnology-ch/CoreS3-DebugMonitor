@@ -138,9 +138,9 @@ public:
         return written;
     }
 
-    static int formatLogWithSeq(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
-                                uint8_t level, const char* tag, const char* message,
-                                bool* outTruncated = nullptr) {
+    static int formatLogBody(char* out, size_t maxLen, uint32_t ms,
+                             uint8_t level, const char* tag, const char* message,
+                             bool* outTruncated = nullptr) {
         if (!out || maxLen < 32) return -1;
         char escTag[64];
         char escMsg[DEBUG_MAX_MESSAGE_SIZE];
@@ -152,8 +152,8 @@ public:
         }
 
         int written = snprintf(out, maxLen,
-            "{\"type\":\"log\",\"seq\":%lu,\"ms\":%lu,\"level\":\"%s\",\"tag\":\"%s\",\"message\":\"%s\"}\n",
-            (unsigned long)seq, (unsigned long)ms, levelToString(level), escTag, escMsg);
+            ",\"ms\":%lu,\"level\":\"%s\",\"tag\":\"%s\",\"message\":\"%s\"}\n",
+            (unsigned long)ms, levelToString(level), escTag, escMsg);
 
         if (written < 0 || (size_t)written >= maxLen) {
             if (outTruncated) *outTruncated = true;
@@ -164,15 +164,26 @@ public:
         return written;
     }
 
-    static int formatMetrics(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
-                             uint32_t heap, uint32_t minHeap, uint32_t maxAlloc,
-                             uint32_t psram, int32_t rssi,
-                             uint32_t avgUs, uint32_t maxUs, uint32_t minUs,
-                             uint32_t budgetOverruns, uint32_t overruns1ms) {
+    static int formatLogWithSeq(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
+                                uint8_t level, const char* tag, const char* message,
+                                bool* outTruncated = nullptr) {
+        if (!out || maxLen < 32) return -1;
+        int headLen = snprintf(out, maxLen, "{\"type\":\"log\",\"seq\":%lu", (unsigned long)seq);
+        if (headLen <= 0 || (size_t)headLen >= maxLen) return -1;
+        int bodyLen = formatLogBody(out + headLen, maxLen - headLen, ms, level, tag, message, outTruncated);
+        if (bodyLen < 0) return -1;
+        return headLen + bodyLen;
+    }
+
+    static int formatMetricsBody(char* out, size_t maxLen, uint32_t ms,
+                                 uint32_t heap, uint32_t minHeap, uint32_t maxAlloc,
+                                 uint32_t psram, int32_t rssi,
+                                 uint32_t avgUs, uint32_t maxUs, uint32_t minUs,
+                                 uint32_t budgetOverruns, uint32_t overruns1ms) {
         if (!out || maxLen < 32) return -1;
         int written = snprintf(out, maxLen,
-            "{\"type\":\"metrics\",\"seq\":%lu,\"ms\":%lu,\"heap\":%lu,\"min_heap\":%lu,\"max_alloc\":%lu,\"psram\":%lu,\"rssi\":%ld,\"avg_update_us\":%lu,\"max_update_us\":%lu,\"min_update_us\":%lu,\"budget_overruns\":%lu,\"overruns_1ms\":%lu}\n",
-            (unsigned long)seq, (unsigned long)ms,
+            ",\"ms\":%lu,\"heap\":%lu,\"min_heap\":%lu,\"max_alloc\":%lu,\"psram\":%lu,\"rssi\":%ld,\"avg_update_us\":%lu,\"max_update_us\":%lu,\"min_update_us\":%lu,\"budget_overruns\":%lu,\"overruns_1ms\":%lu}\n",
+            (unsigned long)ms,
             (unsigned long)heap, (unsigned long)minHeap, (unsigned long)maxAlloc,
             (unsigned long)psram, (long)rssi,
             (unsigned long)avgUs, (unsigned long)maxUs, (unsigned long)minUs,
@@ -186,8 +197,22 @@ public:
         return written;
     }
 
-    static int formatCustomMetric(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
-                                  const char* name, double value) {
+    static int formatMetrics(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
+                             uint32_t heap, uint32_t minHeap, uint32_t maxAlloc,
+                             uint32_t psram, int32_t rssi,
+                             uint32_t avgUs, uint32_t maxUs, uint32_t minUs,
+                             uint32_t budgetOverruns, uint32_t overruns1ms) {
+        if (!out || maxLen < 32) return -1;
+        int headLen = snprintf(out, maxLen, "{\"type\":\"metrics\",\"seq\":%lu", (unsigned long)seq);
+        if (headLen <= 0 || (size_t)headLen >= maxLen) return -1;
+        int bodyLen = formatMetricsBody(out + headLen, maxLen - headLen, ms, heap, minHeap, maxAlloc,
+                                        psram, rssi, avgUs, maxUs, minUs, budgetOverruns, overruns1ms);
+        if (bodyLen < 0) return -1;
+        return headLen + bodyLen;
+    }
+
+    static int formatCustomMetricBody(char* out, size_t maxLen, uint32_t ms,
+                                      const char* name, double value) {
         if (!out || maxLen < 32) return -1;
         char escName[64];
         escapeJson(name ? name : "metric", escName, sizeof(escName));
@@ -199,8 +224,38 @@ public:
         }
 
         int written = snprintf(out, maxLen,
-            "{\"type\":\"metric\",\"seq\":%lu,\"ms\":%lu,\"name\":\"%s\",\"value\":%.2f}\n",
-            (unsigned long)seq, (unsigned long)ms, escName, safeValue);
+            ",\"ms\":%lu,\"name\":\"%s\",\"value\":%.2f}\n",
+            (unsigned long)ms, escName, safeValue);
+
+        if (written < 0 || (size_t)written >= maxLen) {
+            out[maxLen - 2] = '\n';
+            out[maxLen - 1] = '\0';
+            return (int)(maxLen - 1);
+        }
+        return written;
+    }
+
+    static int formatCustomMetric(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
+                                  const char* name, double value) {
+        if (!out || maxLen < 32) return -1;
+        int headLen = snprintf(out, maxLen, "{\"type\":\"metric\",\"seq\":%lu", (unsigned long)seq);
+        if (headLen <= 0 || (size_t)headLen >= maxLen) return -1;
+        int bodyLen = formatCustomMetricBody(out + headLen, maxLen - headLen, ms, name, value);
+        if (bodyLen < 0) return -1;
+        return headLen + bodyLen;
+    }
+
+    static int formatStateBody(char* out, size_t maxLen, uint32_t ms,
+                               const char* name, const char* value) {
+        if (!out || maxLen < 32) return -1;
+        char escName[64];
+        char escVal[128];
+        escapeJson(name ? name : "state", escName, sizeof(escName));
+        escapeJson(value ? value : "", escVal, sizeof(escVal));
+
+        int written = snprintf(out, maxLen,
+            ",\"ms\":%lu,\"name\":\"%s\",\"value\":\"%s\"}\n",
+            (unsigned long)ms, escName, escVal);
 
         if (written < 0 || (size_t)written >= maxLen) {
             out[maxLen - 2] = '\n';
@@ -213,29 +268,19 @@ public:
     static int formatState(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
                            const char* name, const char* value) {
         if (!out || maxLen < 32) return -1;
-        char escName[64];
-        char escVal[128];
-        escapeJson(name ? name : "state", escName, sizeof(escName));
-        escapeJson(value ? value : "", escVal, sizeof(escVal));
-
-        int written = snprintf(out, maxLen,
-            "{\"type\":\"state\",\"seq\":%lu,\"ms\":%lu,\"name\":\"%s\",\"value\":\"%s\"}\n",
-            (unsigned long)seq, (unsigned long)ms, escName, escVal);
-
-        if (written < 0 || (size_t)written >= maxLen) {
-            out[maxLen - 2] = '\n';
-            out[maxLen - 1] = '\0';
-            return (int)(maxLen - 1);
-        }
-        return written;
+        int headLen = snprintf(out, maxLen, "{\"type\":\"state\",\"seq\":%lu", (unsigned long)seq);
+        if (headLen <= 0 || (size_t)headLen >= maxLen) return -1;
+        int bodyLen = formatStateBody(out + headLen, maxLen - headLen, ms, name, value);
+        if (bodyLen < 0) return -1;
+        return headLen + bodyLen;
     }
 
-    static int formatStats(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
-                           const DebugStats& stats) {
+    static int formatStatsBody(char* out, size_t maxLen, uint32_t ms,
+                               const DebugStats& stats) {
         if (!out || maxLen < 32) return -1;
         int written = snprintf(out, maxLen,
-            "{\"type\":\"stats\",\"seq\":%lu,\"ms\":%lu,\"attempted\":%lu,\"enqueued\":%lu,\"sent\":%lu,\"dropped\":%lu,\"truncated\":%lu,\"bytes_sent\":%lu,\"buf_used\":%lu,\"buf_cap\":%lu,\"buf_hwm\":%lu,\"connects\":%lu,\"reconnects\":%lu,\"sock_errors\":%lu,\"avg_us\":%lu,\"max_us\":%lu,\"overruns\":%lu,\"overruns_1ms\":%lu}\n",
-            (unsigned long)seq, (unsigned long)ms,
+            ",\"ms\":%lu,\"attempted\":%lu,\"enqueued\":%lu,\"sent\":%lu,\"dropped\":%lu,\"truncated\":%lu,\"bytes_sent\":%lu,\"buf_used\":%lu,\"buf_cap\":%lu,\"buf_hwm\":%lu,\"connects\":%lu,\"reconnects\":%lu,\"sock_errors\":%lu,\"avg_us\":%lu,\"max_us\":%lu,\"overruns\":%lu,\"overruns_1ms\":%lu}\n",
+            (unsigned long)ms,
             (unsigned long)stats.messagesAttempted,
             (unsigned long)stats.messagesEnqueued,
             (unsigned long)stats.messagesSent,
@@ -259,5 +304,15 @@ public:
             return (int)(maxLen - 1);
         }
         return written;
+    }
+
+    static int formatStats(char* out, size_t maxLen, uint32_t seq, uint32_t ms,
+                           const DebugStats& stats) {
+        if (!out || maxLen < 32) return -1;
+        int headLen = snprintf(out, maxLen, "{\"type\":\"stats\",\"seq\":%lu", (unsigned long)seq);
+        if (headLen <= 0 || (size_t)headLen >= maxLen) return -1;
+        int bodyLen = formatStatsBody(out + headLen, maxLen - headLen, ms, stats);
+        if (bodyLen < 0) return -1;
+        return headLen + bodyLen;
     }
 };

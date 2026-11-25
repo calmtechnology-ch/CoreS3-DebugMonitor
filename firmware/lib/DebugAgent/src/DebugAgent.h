@@ -54,7 +54,7 @@ public:
     void printReport(Print& out = Serial);
 
 private:
-    void enqueueWithSeq(char* lineBuf, size_t len, size_t seqOffset);
+    void enqueueWithSeq(const char* type, const char* body, size_t bodyLen);
     void sendPeriodicMetrics(int64_t startUs);
 
     DebugConfig _config;

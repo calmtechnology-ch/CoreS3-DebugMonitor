@@ -84,20 +84,19 @@ const char* DebugAgent::getBootId() const {
     return _config.bootId;
 }
 
-void DebugAgent::enqueueWithSeq(char* lineBuf, size_t len, size_t seqOffset) {
-    if (!_initialized || len == 0) return;
+void DebugAgent::enqueueWithSeq(const char* type, const char* body, size_t bodyLen) {
+    if (!_initialized || bodyLen == 0 || !type || !body) return;
 
-    // Fast, thread-safe sequence number assignment & buffer push under short critical section
+    char lineBuf[DEBUG_MAX_MESSAGE_SIZE + 128];
     portENTER_CRITICAL(&_mux);
     uint32_t mySeq = ++_seq;
-    char* p = lineBuf + seqOffset;
-    uint32_t temp = mySeq;
-    for (int i = 9; i >= 0; --i) {
-        p[i] = '0' + (temp % 10);
-        temp /= 10;
+    int headLen = snprintf(lineBuf, sizeof(lineBuf), "{\"type\":\"%s\",\"seq\":%lu", type, (unsigned long)mySeq);
+    if (headLen > 0 && (size_t)headLen + bodyLen < sizeof(lineBuf)) {
+        memcpy(lineBuf + headLen, body, bodyLen);
+        size_t totalLen = (size_t)headLen + bodyLen;
+        lineBuf[totalLen] = '\0';
+        _buffer.push(lineBuf, totalLen, &_stats);
     }
-
-    _buffer.push(lineBuf, len, &_stats);
     portEXIT_CRITICAL(&_mux);
 }
 
@@ -149,32 +148,29 @@ void DebugAgent::sendPeriodicMetrics(int64_t startUs) {
         _lastMetricMs = now;
 
         if (_transport.isConnected()) {
-            char metricBuf[320];
+            char metricBody[320];
             uint32_t freeHeap = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
             uint32_t minHeap = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
             uint32_t maxAlloc = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
             uint32_t freePsram = psramFound() ? heap_caps_get_free_size(MALLOC_CAP_SPIRAM) : 0;
             int32_t rssi = (WiFi.status() == WL_CONNECTED) ? (int32_t)WiFi.RSSI() : 0;
 
-            int len = DebugProtocol::formatMetrics(metricBuf, sizeof(metricBuf),
-                0, now, freeHeap, minHeap, maxAlloc, freePsram, rssi,
+            int len = DebugProtocol::formatMetricsBody(metricBody, sizeof(metricBody),
+                now, freeHeap, minHeap, maxAlloc, freePsram, rssi,
                 _stats.avgUpdateUs, _stats.maxUpdateUs, _stats.minUpdateUs,
                 _stats.budgetOverruns, _stats.updateOverruns1ms);
 
             if (len > 0) {
-                // "{\"type\":\"metrics\",\"seq\":0000000000," -> offset 24
-                // Let's verify: strlen("{\"type\":\"metrics\",\"seq\":") == 24
-                enqueueWithSeq(metricBuf, (size_t)len, 24);
+                enqueueWithSeq("metrics", metricBody, (size_t)len);
             }
 
             // Periodic internal stats (every 2 seconds)
             if (now - _lastStatsMs >= 2000) {
                 _lastStatsMs = now;
-                char statsBuf[384];
-                int slen = DebugProtocol::formatStats(statsBuf, sizeof(statsBuf), 0, now, _stats);
+                char statsBody[384];
+                int slen = DebugProtocol::formatStatsBody(statsBody, sizeof(statsBody), now, _stats);
                 if (slen > 0) {
-                    // "{\"type\":\"stats\",\"seq\":0000000000," -> offset 22
-                    enqueueWithSeq(statsBuf, (size_t)slen, 22);
+                    enqueueWithSeq("stats", statsBody, (size_t)slen);
                 }
             }
         }
@@ -187,18 +183,17 @@ void DebugAgent::log(uint8_t level, const char* tag, const char* message) {
 
     _stats.messagesAttempted++;
 
-    char lineBuf[DEBUG_MAX_MESSAGE_SIZE + 128];
+    char logBody[DEBUG_MAX_MESSAGE_SIZE + 64];
     bool truncated = false;
-    // formatLogWithSeq puts "0000000000" at seq position (offset 20)
-    int len = DebugProtocol::formatLogWithSeq(lineBuf, sizeof(lineBuf),
-                                             0, millis(), level, tag, message, &truncated);
+    int len = DebugProtocol::formatLogBody(logBody, sizeof(logBody),
+                                          millis(), level, tag, message, &truncated);
 
     if (truncated) {
         _stats.messagesTruncated++;
     }
 
     if (len > 0) {
-        enqueueWithSeq(lineBuf, (size_t)len, 20);
+        enqueueWithSeq("log", logBody, (size_t)len);
     }
 }
 
@@ -315,11 +310,10 @@ void DebugAgent::metric(const char* name, double value) {
     if (xPortInIsrContext()) return;
     _stats.messagesAttempted++;
 
-    char lineBuf[160];
-    int len = DebugProtocol::formatCustomMetric(lineBuf, sizeof(lineBuf), 0, millis(), name, value);
+    char metricBody[160];
+    int len = DebugProtocol::formatCustomMetricBody(metricBody, sizeof(metricBody), millis(), name, value);
     if (len > 0) {
-        // "{\"type\":\"metric\",\"seq\":0000000000," -> offset 23
-        enqueueWithSeq(lineBuf, (size_t)len, 23);
+        enqueueWithSeq("metric", metricBody, (size_t)len);
     }
 }
 
@@ -336,11 +330,10 @@ void DebugAgent::state(const char* name, const char* value) {
     if (xPortInIsrContext()) return;
     _stats.messagesAttempted++;
 
-    char lineBuf[192];
-    int len = DebugProtocol::formatState(lineBuf, sizeof(lineBuf), 0, millis(), name, value);
+    char stateBody[192];
+    int len = DebugProtocol::formatStateBody(stateBody, sizeof(stateBody), millis(), name, value);
     if (len > 0) {
-        // "{\"type\":\"state\",\"seq\":0000000000," -> offset 22
-        enqueueWithSeq(lineBuf, (size_t)len, 22);
+        enqueueWithSeq("state", stateBody, (size_t)len);
     }
 }
 
